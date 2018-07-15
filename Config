@@ -1,0 +1,70 @@
+#        ++==============================================++
+#        ||  Pipeline for WGS metagenomics datasets      ||
+#        ||             Configuration File               ||
+#        ++==============================================++
+
+###       NOTE: This file must follow YAML specifcations.
+###       Only use spaces, no tabs.(I know, it sucks)
+
+##### Libraries and Programs #####
+# Unix: fastqc, samtools, bowtie2, bbduk, megahit
+# Python3: snakemake, 
+# R: 
+# Java: Picard
+
+##### Asumptions #####
+# 0. Sequencing files are found under `data/sequencing`
+# 1. Reads are paired end reads
+# 2. Reads have been demuliplexed. Any barcode used for pcr/optical duplicates has been used.
+# 3. Gzipped fastq file follow the `<Accession #>_<resource category>_<Sample Name>_(<Factor Level>_)+.<read>.fastq.gz` format. Where (...)+ indicates one or more factor levels, delimited by under_scores. Read feild is `R1` or `R2`
+# 
+
+##### Instructions #####
+# 0. Run `snakemake setup`
+# 1. Add primers to /data/metadata/primers/[fwd_primer.fastq, rev_primers.fastq]
+# 2. Unzip the isa files into `data/metadata/isa_files`, there should not be any isa files in folders in this directory. 
+# 3. Run `snakemake fastqc` to get a sense of the read quality.
+# 4. Adjust the parameters in this file to meet the needs of the experiment. Please read through each parameter discription. Failure to do so may give you results that look good, but are bad.
+# 5. Run `snakemake all -j <num_cpu_cores>`, and go grab lunch, the pipeline should finish in two hours for a ~20gb dataset on a 8 core machine using default parameters.
+
+#### GLDS #####
+glds_num: GLDS-69
+
+##### BBDUK Adapter and syntheic removal #####
+duk_ref: adapters  #Comma-delimited list of reference files. In addition to filenames, you may also use the keywords: adapters, artifacts, phix, lambda, pjet, mtst, kapa
+duk_k: 21         # Kmer length used for finding contaminants.  Contaminants shorter than k will not be found.  k must be at least 1.
+duk_mink: 4      # Look for shorter kmers at read tips down to this length, when k-trimming or masking.  0 means disabled.  Enabling this will disable maskmiddle.
+duk_hdist: 1      # Maximum Hamming distance for ref kmers (subs only). Memory use is proportional to (3*K)^hdist.
+duk_ktrim: n      # Trim reads to remove bases matching reference kmers. Values:  f (don't trim),  r (trim to the right), l (trim to the left)
+duk_trimq: 13     #Regions with average quality BELOW this will be trimmed, if qtrim is set to something other than f.  Can be a floating-point number like 7.3.
+duk_qtrim: lr     #Trim read ends to remove bases with quality below trimq.Performed AFTER looking for kmers.  Values:  rl (trim both ends), f (neither end), r (right end only), l (left end only), w (sliding window).
+duk_minavgquality: 20     #(maq) Reads with average quality (after trimming) below this will be discarded.
+duk_maxns: 0      #If non-negative, reads with more Ns than this (after trimming) will be discarded.
+duk_ziplevel: 5
+duk_threads: 8
+
+
+##### Bowtie2 Contaminate removal #####
+contam_indexes: ~/lab/tool_databases/bowtie/hg19_main_mask_ribo_animal_allplant_allfungus #Index filename prefix (minus trailing .X.bt2). Coma seperated 
+contam_threads: 8
+contam_mode: sensitive # For end-to-end:{very-fast,fast,sensitive,very-sensitive}, For local: {very-fast-local,fast-local,sensitive-local,very-sensitive-local}
+
+##### MEGAHIT Config #####
+megahit_threads: 8
+
+
+remap_threads: 8
+remap_mode: sensitive # For end-to-end:{very-fast,fast,sensitive,very-sensitive}, For local: {very-fast-local,fast-local,sensitive-local,very-sensitive-local}
+
+picard_jar: /opt/picard/picard.jar
+picard_threads: 8
+
+maxbin_dir: /opt/MaxBin-2.2.5/
+maxbin_threads: 8
+
+kraken_threads: 8
+kraken_datadase:
+kraken_persision: 12
+
+diamond_ref_dir: ~/lab/tool_databases/diamond/
+uniprot_ref_dir: ~/lab/ref_datasets/uniprot/

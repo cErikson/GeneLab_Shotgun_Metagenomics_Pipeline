@@ -414,6 +414,12 @@ rule diamond_build:
         '''
 
 rule diamond:
+    input:
+    output:
+    shell:
+        '''
+        diamond blastx --db config['diamond_ref_dir']+'/uniref100/uniref100.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive
+
 
 rule taxa_assignment:
     input:

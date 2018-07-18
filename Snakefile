@@ -91,7 +91,8 @@ rule bbduk_pe:
         bbduk.sh in={input.read1} in2={input.read2} out={output.read1} out2={output.read2} outm={output.read1_fail} outm2={output.read2_fail}\
         stats={log.stats} refstats={log.refstats} ref={config[duk_ref]} ktrim={config[duk_ktrim]} k={config[duk_k]} mink={config[duk_mink]}\
         qtrim={config[duk_qtrim]} trimq={config[duk_trimq]} cardinalityout=t mbq={config[duk_minavgquality]} maxns={config[duk_maxns]}\
-        zl={config[duk_ziplevel]} tossjunk=t overwrite=t threads={threads} 2> {log.stderr}
+        tbo={config[duk_tbo]}\
+        qin={config[duk_qin]} zl={config[duk_ziplevel]} tossjunk=t overwrite=t threads={threads} 2> {log.stderr}
         '''
         
 rule bbduk_se:
@@ -111,15 +112,28 @@ rule bbduk_se:
         bbduk.sh in={input.read1} out={output.read1} outm={output.read1_fail}\
         stats={log.stats} refstats={log.refstats} ref={config[duk_ref]} ktrim={config[duk_ktrim]} k={config[duk_k]} mink={config[duk_mink]} \ 
         qtrim={config[duk_qtrim]} trimq={config[duk_trimq]} cardinalityout=t mbq={config[duk_minavgquality]} maxns={config[duk_maxns]} \
-        zl={config[duk_ziplevel]} tossjunk=t overwrite=t 2> {log.stderr}        
+        tbo={config[duk_tbo]}\
+        qin={config[duk_qin]} zl={config[duk_ziplevel]} tossjunk=t overwrite=t 2> {log.stderr}        
         '''
-        
+
+rule contam_bowtie_build:
+    input:
+        masked=config['contam_fa']
+    output:
+        index=directory(config['contam_index'])
+    threads:config['bowtie_build_threads']
+    shell:
+        '''
+        bowtie2-build {input.masked} {output.index}/{config[contam_name]} --threads {threads}
+        '''
+ 
 ruleorder: contam_bowtie_pe > contam_bowtie_se
   
 rule contam_bowtie_pe:
     input: 
         read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
-        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz'
+        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
+	index=directory(config['contam_index'])
     output:
         sam='data/decontaminate/sam/{id}.sam',
         read1_clean='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
@@ -133,12 +147,13 @@ rule contam_bowtie_pe:
     threads: config['contam_threads']
     shell:
         '''
-        bowtie2 -x {config[contam_indexes]} -1 {input.read1} -2 {input.read2} -S {output.sam} --al-conc-gz data/decontaminate/dirty/{wildcards.id}_R%-dirty.fastq.gz --un-conc-gz data/decontaminate/clean/{wildcards.id}_R%-clean.fastq.gz --{config[contam_mode]} --no-discordant --threads {threads} 2> {log.stderr} > {log.stdout} 
+        bowtie2 -x {input.index}/{config[contam_name]} -1 {input.read1} -2 {input.read2} -S {output.sam} --al-conc-gz data/decontaminate/dirty/{wildcards.id}_R%-dirty.fastq.gz --un-conc-gz data/decontaminate/clean/{wildcards.id}_R%-clean.fastq.gz --{config[contam_mode]} --no-discordant --threads {threads} 2> {log.stderr} > {log.stdout} 
         '''
 
 rule contam_bowtie_se:
     input: 
-        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz'
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+        index=directory(config['contam_index'])
     output:
         sam='data/decontaminate/sam/{id}.sam',
         read1_clean='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
@@ -150,7 +165,7 @@ rule contam_bowtie_se:
     threads: config['contam_threads']
     shell:
         '''
-        bowtie2 -x {config[contam_indexes]} -1 {input.read1} -S {output.sam} --al-conc-gz data/decontaminate/dirty/{wildcards.id}_R%-dirty.fastq.gz --un-conc-gz data/decontaminate/clean/{wildcards.id}_R%-clean.fastq.gz --{config[contam_mode]} --no-discordant --threads {threads}  2> {log.stderr} > {log.stdout}
+        bowtie2 -x {input.index}/{config[contam_name]} -1 {input.read1} -S {output.sam} --al-conc-gz data/decontaminate/dirty/{wildcards.id}_R%-dirty.fastq.gz --un-conc-gz data/decontaminate/clean/{wildcards.id}_R%-clean.fastq.gz --{config[contam_mode]} --no-discordant --threads {threads}  2> {log.stderr} > {log.stdout}
         '''
 
 ruleorder: megahit_pe > megahit_se
@@ -258,8 +273,8 @@ rule remap_samtools:
         bam='data/remap/{id}/{id}.bam'
     shell:
         '''
-        samtools faidx {input.ref} -o data/remap/{wildcards.id}.fai
-        samtools view -bt data/remap/{wildcards.id}.fai {input.sam} > {output.bam}.1
+        samtools faidx {input.ref} 
+        samtools view -bt data/remap/{wildcards.id}/{wildcards.id}.fai {input.sam} > {output.bam}.1
         samtools sort {output.bam}.1 > {output.bam}
         samtools index {output.bam}
         rm {output.bam}.1
@@ -309,14 +324,11 @@ rule maxbin:
         abund='data/remap/{id}/{id}_abundance.txt'
     output:
         base=dynamic('data/binning/{id}/{id}.{bin}.fasta')
-#    log:
-#        stderr='logs/maxbin/{id}/stderr.txt',
-#        stdout='logs/maxbin/{id}/stdout.txt'
-#    benchmark: 'logs/maxbin/{id}/benchmark.tsv'
     threads: config['maxbin_threads']
     shell:
         '''
-        {config[maxbin_dir]}/run_MaxBin.pl -contig {input.contig} -out data/binning/{wildcards.id}/{wildcards.id} -abund {input.abund} -thread {threads}
+        mkdir -p logs/maxbin/{wildcards.id}/ logs/maxbin/{wildcards.id}/
+        {config[maxbin_dir]}/run_MaxBin.pl -contig {input.contig} -out data/binning/{wildcards.id}/{wildcards.id} -abund {input.abund} -thread {threads} 2> logs/maxbin/{wildcards.id}/stderr.txt > logs/maxbin/{wildcards.id}/stdout.txt
         '''
 
 rule prodigal_draft_genome:
@@ -430,7 +442,9 @@ rule diamond_build:
 
 rule diamond:
     input:
+	'test'
     output:
+	'tset'
     shell:
         '''
         diamond blastx --db config['diamond_ref_dir']+'/uniref100/uniref100.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive
@@ -448,7 +462,7 @@ rule single:
     input:
         'data/draft_genome/{id}/annotation.done',
         expand('report/fastqc/decontaminate/clean/{{id}}_R{READ}-clean_fastqc.html', READ=file_ids.read),
-        'data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
+        #'data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
         
     output:
         touch('single_{id}.done')

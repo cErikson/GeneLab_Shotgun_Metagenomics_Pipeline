@@ -338,51 +338,66 @@ rule do_annotation:
     input: dynamic('data/draft_genome/{id}/{bin}/{id}_{bin}_genome.gff')
     output: touch('data/draft_genome/{id}/annotation.done')
 
-rule krakenhll_pe:
+rule kraken2_build:
+    output:
+        directory(config['kraken_ref_dir'])
+    threads: config['kraken_threads']
+    run:
+        shell('kraken2-build --db {config[kraken_ref_dir]} --download-taxonomy --threads {threads}')
+        for lib in config['kraken_bld_libraries']:
+            shell('kraken2-build --db {config[kraken_ref_dir]} --download-library {lib} --threads {threads}')
+        shell('kraken2-build --db {config[kraken_ref_dir]} --build --kmer-len {config[kraken_bld_kmer_len]} --minimizer-len {config[kraken_bld_minimizer_len]} --minimizer-spaces {config[kraken_bld_minimizer_spaces]} --threads {threads}')
+        
+
+ruleorder: kraken2_pe > kraken2_se     
+
+rule kraken2_pe:
     input:
         read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
         read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
+        index=directory(config['kraken_ref_dir'])
     output:
-        unclass1='data/metagenome_taxa_assignment/{id}/{id}_unclassified_R1.fasta.gz',
-        unclass2='data/metagenome_taxa_assignment/{id}/{id}_unclassified_R2.fasta.gz',
-        class1='data/metagenome_taxa_assignment/{id}/{id}_classified_R1.fasta.gz',
-        class2='data/metagenome_taxa_assignment/{id}/{id}_classified_R2.fasta.gz',
+        unclass1='data/metagenome_taxa_assignment/{id}/{id}_unclassified_1.fq',
+        unclass2='data/metagenome_taxa_assignment/{id}/{id}_unclassified_2.fq',
+        class1='data/metagenome_taxa_assignment/{id}/{id}_classified_1.fq',
+        class2='data/metagenome_taxa_assignment/{id}/{id}_classified_2.fq',
         taxa='data/metagenome_taxa_assignment/{id}/{id}_kraken_taxa.txt',
         report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt'   
     log:
-        stderr='logs/maxbin/{id}/stderr.txt',
-        stdout='logs/maxbin/{id}/stdout.txt'
-    benchmark: 'logs/maxbin/{id}/benchmark.tsv'
+        stderr='logs/kraken/{id}/stderr.txt',
+        stdout='logs/kraken/{id}/stdout.txt'
+    benchmark: 'logs/kraken/{id}/benchmark.tsv'
     threads: config['kraken_threads']
     shell:
         '''
-        krakenhll --db --threads {threads} \
-        --unclassified-out data/metagenome_taxa_assignment/{id}/{id}_unclassified_R#.fasta.gz\
-        --classified-out data/metagenome_taxa_assignment/{id}/{id}_unclassified_R#.fasta.gz \
-        --output {output.taxa} --report-file {output.report} --precision {config[kraken_percision]}
-        --paired --check-names --gzip-compressed --fastq-input {input.read1} {input.read2}
+        kraken2 --db {input.index} --threads {threads} \
+        --unclassified-out data/metagenome_taxa_assignment/{wildcards.id}/{wildcards.id}_unclassified\
+        --classified-out data/metagenome_taxa_assignment/{wildcards.id}/{wildcards.id}_classified \
+        --output {output.taxa} --report {output.report} --confidence {config[kraken_confidence]}\
+        --paired --use-names --gzip-compressed {input.read1} {input.read2}
         '''
         
-rule krakenhll_se:
+rule kraken2_se:
     input:
-        read='data/decontaminate/clean/{id}_R1-clean.fastq.gz'
+        read='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
+        index=directory(config['kraken_ref_dir'])
     output:
         unclass='data/metagenome_taxa_assignment/{id}/{id}_unclassified.fasta.gz',
-        class='data/metagenome_taxa_assignment/{id}/{id}_classified.fasta.gz',
+        classed='data/metagenome_taxa_assignment/{id}/{id}_classified_R2.fasta.gz',
         taxa='data/metagenome_taxa_assignment/{id}/{id}_kraken_taxa.txt',
-        report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt'   
+        report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt' 
     log:
-        stderr='logs/maxbin/{id}/stderr.txt',
-        stdout='logs/maxbin/{id}/stdout.txt'
-    benchmark: 'logs/maxbin/{id}/benchmark.tsv'
+        stderr='logs/kraken/{id}/stderr.txt',
+        stdout='logs/kraken/{id}/stdout.txt'
+    benchmark: 'logs/kraken/{id}/benchmark.tsv'
     threads: config['kraken_threads']
     shell:
         '''
-        krakenhll --db --threads {threads} \
+        kraken2 --db {input.index} --threads {threads} \
         --unclassified-out {output.unclass}
-        --classified-out {output.class} \
-        --output {output.taxa} --report-file {output.report} --precision {config[kraken_percision]}
-        --gzip-compressed --fastq-input {input.read}
+        --classified-out {output.classed} \
+        --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
+        --paired --use-names --gzip-compressed {input.read}
         '''
 
 rule grab_uniprot:
@@ -419,7 +434,7 @@ rule diamond:
     shell:
         '''
         diamond blastx --db config['diamond_ref_dir']+'/uniref100/uniref100.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive
-
+        '''
 
 rule taxa_assignment:
     input:

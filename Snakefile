@@ -323,17 +323,32 @@ rule maxbin:
         contig='data/assembly/{id}/{id}.contigs.fa',
         abund='data/remap/{id}/{id}_abundance.txt'
     output:
-        base=dynamic('data/binning/{id}/{id}.{bin}.fasta')
+        base=dynamic('data/binning/{id}/{id}_{bin}.fasta')
     threads: config['maxbin_threads']
     shell:
         '''
         mkdir -p logs/maxbin/{wildcards.id}/ logs/maxbin/{wildcards.id}/
         {config[maxbin_dir]}/run_MaxBin.pl -contig {input.contig} -out data/binning/{wildcards.id}/{wildcards.id} -abund {input.abund} -thread {threads} 2> logs/maxbin/{wildcards.id}/stderr.txt > logs/maxbin/{wildcards.id}/stdout.txt
         '''
+        
+rule kraken2_id:
+    input:
+        read='data/binning/{id}/{id}_{bin}.fasta',
+        index=config['kraken_ref_dir']+'/hash.k2d'
+    output:
+        taxa='data/binning/{id}/taxa_id/{id}_{bin}_kraken_taxa.txt,
+        report='data/binning/{id}/taxa_id/{id}_{bin}_kraken_report.txt' 
+    threads: config['kraken_threads']
+    shell:
+        '''
+        kraken2 --db $(dirname {input.index}) --threads {threads} \
+        --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
+        --use-names --gzip-compressed {input.read}
+        '''
 
 rule prodigal_draft_genome:
     input:
-        contigs='data/binning/{id}/{id}.{bin}.fasta'
+        contigs='data/binning/{id}/{id}_{bin}.fasta'
     output:
         contigs='data/draft_genome/{id}/{bin}/{id}_{bin}_contigs.fasta',
         protiens='data/draft_genome/{id}/{bin}/{id}_{bin}_protiens.fasta',
@@ -409,31 +424,31 @@ rule kraken2_se:
         --unclassified-out {output.unclass}
         --classified-out {output.classed} \
         --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
-        --paired --use-names --gzip-compressed {input.read}
+        --use-names --gzip-compressed {input.read}
         '''
 
 rule braken_build:
     input:
         db=config['kraken_ref_dir']+'/hash.k2d'
     output:
-        dist=config['kraken_ref_dir']+'/database_kmer_distr_{config[braken_readlen]}mers.txt'
+        dist=config['kraken_ref_dir']+'/database_kmer_distr_'+str(config['braken_readlen'])+'mers.txt'
     threads: config['kraken_threads']
     shell:
         '''
         kraken2 --db $(dirname {input.db}) --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | tr '\n' ' ' ) 
-        perl {config[braken_dir]}/src/count-kmer-abubndances.pl --db=$(dirname {input.db}) --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts
+        perl {config[braken_dir]}/src/count-kmer-abundances.pl --db=$(dirname {input.db}) --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database_align.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts 
         python {config[braken_dir]}/src/generate_kmer_distribution.py -i {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts -o {config[kraken_ref_dir]}/database_kmer_distr_{config[braken_readlen]}mers.txt
         '''
 
 rule braken:
     input:
         report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
-        dist=config['kraken_ref_dir']+'/database_kmer_distr_{config[braken_readlen]}mers.txt'
+        dist=config['kraken_ref_dir']+'/database_kmer_distr_'+str(config['braken_readlen'])+'mers.txt'
     output:
         abund='data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'
     shell:
         '''
-        python {config[braken_dir]}/estimate_abundance.py -i {input.report} -k {input.dist} -l {config[braken_level]} -t {config[braken_cutoff]} -o {output.abund}
+        python {config[braken_dir]}/src/est_abundance.py -i {input.report} -k {input.dist} -l {config[braken_level]} -t {config[braken_cutoff]} -o {output.abund}
         '''
         
 rule combine_braken:
@@ -449,45 +464,66 @@ rule combine_braken:
 
 rule grab_uniprot:
     output:
-        ref=ancient(config['uniprot_ref_dir']+'uniref100.fasta.gz'),
+        ref=ancient(config['uniprot_ref_dir']+config['uniref_level']+'.fasta.gz'),
         go=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gaf.gz'),
         meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
     shell:
         '''
         cd {config[uniprot_ref_dir]}
-        wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.fasta.gz
-        wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.release_note
+        wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/{config[uniref_level]}/{config[uniref_level]}.fasta.gz
+        wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/{config[uniref_level]}/{config[uniref_level]}.release_note
         wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
         wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gpi.gz
         '''
 
 rule diamond_build: 
     input:
-        uniref=config['uniprot_ref_dir']+'uniref100.fasta.gz'
+        uniref=config['uniprot_ref_dir']+config['uniref_level']+'.fasta.gz'
     output:
-        directory(config['diamond_ref_dir']+'uniref100'),
-        config['diamond_ref_dir']+'/uniref100/uniref100.dmnd'         
+        directory(config['diamond_ref_dir']+config['uniref_level']),
+        config['diamond_ref_dir']+config['uniref_level']+'/'+config['uniref_level']+'.dmnd'         
     shell:
         '''
-        cd config['diamond_ref_dir']
-        mkdir -p uniref100
-        cd uniref100
-        diamond makedb --in {input.uniref} --db uniref100 -v --log 
+        cd {config[diamond_ref_dir]}
+        mkdir -p {config[uniref_level]}
+        cd {config[uniref_level]}
+        diamond makedb --in {input.uniref} --db {config[uniref_level]} -v --log 
         '''
 
 rule diamond_pe:
     input:
         read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
         read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
-        index=directory(config['diamond_ref_dir']+'uniref100'),
-        touchstone=config['diamond_ref_dir']+'/uniref100/uniref100.dmnd'    
+        touchstone=config['diamond_ref_dir']+config['uniref_level']+'/'+config['uniref_level']+'.dmnd'    
     output:
         'data/metagenome_function_assignment/'
     shell:
         '''
-        diamond blastx --db config['diamond_ref_dir']+'/uniref100/uniref100.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive
+        diamond blastx --db config['diamond_ref_dir']+'/{config[uniref_level]}/{config[uniref_level]}.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive
         '''
 
+rule build_go_db:
+    input:
+        gaf=config['uniprot_ref_dir']+'goa_uniprot_all.gaf.gz'
+    output:
+        temporary('tmp/go/accession2go.json')
+    run:
+        UNIPROT=1; GOA=4; EVID=6; ASPECT=8; 
+        import gzip
+        goa={}
+        with gzip.open(input.gaf, 'rt') as f:
+            for line in f:
+                if line.startswith('!'):
+                    continue
+                cells=line.split('\t')
+                goa.setdefault(cells[UNIPROT],[]) # add uniprot acession if it dosn't exist
+                goa[cells[UNIPROT]] += (cells[GOA], cells[ASPECT], cells[EVID])
+        with open(output.json, 'w') as o:
+            json.dump(goa, o)
+            
+    
+
+    
 rule taxa_assignment:
     input:
         expand('data/metagenome_taxa_assignment/{id}/{id}_classified.fasta', id=file_ids.id)

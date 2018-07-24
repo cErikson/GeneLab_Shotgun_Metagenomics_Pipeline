@@ -91,7 +91,7 @@ rule bbduk_pe:
         bbduk.sh in={input.read1} in2={input.read2} out={output.read1} out2={output.read2} outm={output.read1_fail} outm2={output.read2_fail}\
         stats={log.stats} refstats={log.refstats} ref={config[duk_ref]} ktrim={config[duk_ktrim]} k={config[duk_k]} mink={config[duk_mink]}\
         qtrim={config[duk_qtrim]} trimq={config[duk_trimq]} cardinalityout=t mbq={config[duk_minavgquality]} maxns={config[duk_maxns]}\
-        tbo={config[duk_tbo]}\
+        tbo={config[duk_tbo]} forcetrimleft={config[duk_trimleft]} forcetrimright={config[duk_trimright]}\
         qin={config[duk_qin]} zl={config[duk_ziplevel]} tossjunk=t overwrite=t threads={threads} 2> {log.stderr}
         '''
         
@@ -414,12 +414,13 @@ rule kraken2_se:
 
 rule braken_build:
     input:
+        db=directory(config['kraken_ref_dir'])
     output:
         dist='{config[kraken_db]}/database_kmer_distr_{config[braken_readlen]}mers.txt'
     threads: config['kraken_threads']
     shell:
         '''
-        kraken2 --db {config[kraken_ref_dir]} --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | xargs cat ) 
+        kraken2 --db {config[kraken_ref_dir]} --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | tr '\n' ' ' ) 
         perl {config[braken_dir]}/src/count-kmer-abubndances.pl --db={config[kraken_ref_dir]} --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts
         python {config[braken_dir]}/src/generate_kmer_distribution.py -i {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts -o {config[kraken_ref_dir]}/database_kmer_distr_{config[braken_readlen]}mers.txt
         '''
@@ -504,5 +505,4 @@ rule all:
     input:
         qc='report/multiqc_report.html',
         assembly='assembly.done',
-        abundance='data/{DS_NUM}_metagenomics_braken-abundances.txt'
-        
+        abundance='data/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)       

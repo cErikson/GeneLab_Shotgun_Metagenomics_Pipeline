@@ -475,11 +475,14 @@ rule diamond_build:
         diamond makedb --in {input.uniref} --db uniref100 -v --log 
         '''
 
-rule diamond:
+rule diamond_pe:
     input:
-	'test'
+        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
+        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
+        index=directory(config['diamond_ref_dir']+'uniref100'),
+        touchstone=config['diamond_ref_dir']+'/uniref100/uniref100.dmnd'    
     output:
-	'tset'
+        'data/metagenome_function_assignment/'
     shell:
         '''
         diamond blastx --db config['diamond_ref_dir']+'/uniref100/uniref100.dmnd' --out {output.table} --outfmt 6 --query {input.query} -max-target-seqs 1 --strand both --compress 1 --sensitive

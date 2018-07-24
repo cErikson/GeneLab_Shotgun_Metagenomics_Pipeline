@@ -352,7 +352,7 @@ rule do_annotation:
 
 rule kraken2_build:
     output:
-        directory(config['kraken_ref_dir'])
+        config['kraken_ref_dir']+'/hash.k2d'
     threads: config['kraken_threads']
     run:
         shell('kraken2-build --db {config[kraken_ref_dir]} --download-taxonomy --threads {threads}')
@@ -367,7 +367,7 @@ rule kraken2_pe:
     input:
         read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
         read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
-        index=directory(config['kraken_ref_dir'])
+        index=config['kraken_ref_dir']+'/hash.k2d'
     output:
         unclass1='data/metagenome_taxa_assignment/{id}/{id}_unclassified_1.fq',
         unclass2='data/metagenome_taxa_assignment/{id}/{id}_unclassified_2.fq',
@@ -382,7 +382,7 @@ rule kraken2_pe:
     threads: config['kraken_threads']
     shell:
         '''
-        kraken2 --db {input.index} --threads {threads} \
+        kraken2 --db $(dirname {input.index}) --threads {threads} \
         --unclassified-out data/metagenome_taxa_assignment/{wildcards.id}/{wildcards.id}_unclassified\
         --classified-out data/metagenome_taxa_assignment/{wildcards.id}/{wildcards.id}_classified \
         --output {output.taxa} --report {output.report} --confidence {config[kraken_confidence]}\
@@ -392,7 +392,7 @@ rule kraken2_pe:
 rule kraken2_se:
     input:
         read='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
-        index=directory(config['kraken_ref_dir'])
+        index=config['kraken_ref_dir']+'/hash.k2d'
     output:
         unclass='data/metagenome_taxa_assignment/{id}/{id}_unclassified.fasta.gz',
         classed='data/metagenome_taxa_assignment/{id}/{id}_classified_R2.fasta.gz',
@@ -405,7 +405,7 @@ rule kraken2_se:
     threads: config['kraken_threads']
     shell:
         '''
-        kraken2 --db {input.index} --threads {threads} \
+        kraken2 --db $(dirname {input.index}) --threads {threads} \
         --unclassified-out {output.unclass}
         --classified-out {output.classed} \
         --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
@@ -414,21 +414,21 @@ rule kraken2_se:
 
 rule braken_build:
     input:
-        db=directory(config['kraken_ref_dir'])
+        db=config['kraken_ref_dir']+'/hash.k2d'
     output:
-        dist='{config[kraken_db]}/database_kmer_distr_{config[braken_readlen]}mers.txt'
+        dist=config['kraken_ref_dir']+'/database_kmer_distr_{config[braken_readlen]}mers.txt'
     threads: config['kraken_threads']
     shell:
         '''
-        kraken2 --db {config[kraken_ref_dir]} --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | tr '\n' ' ' ) 
-        perl {config[braken_dir]}/src/count-kmer-abubndances.pl --db={config[kraken_ref_dir]} --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts
+        kraken2 --db $(dirname {input.db}) --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | tr '\n' ' ' ) 
+        perl {config[braken_dir]}/src/count-kmer-abubndances.pl --db=$(dirname {input.db}) --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts
         python {config[braken_dir]}/src/generate_kmer_distribution.py -i {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts -o {config[kraken_ref_dir]}/database_kmer_distr_{config[braken_readlen]}mers.txt
         '''
 
 rule braken:
     input:
         report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
-        dist='{config[kraken_db]}/database_kmer_distr_{config[braken_readlen]}mers.txt'
+        dist=config['kraken_ref_dir']+'/database_kmer_distr_{config[braken_readlen]}mers.txt'
     output:
         abund='data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'
     shell:
@@ -454,7 +454,7 @@ rule grab_uniprot:
         meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
     shell:
         '''
-        cd {config['uniprot_ref_dir']}
+        cd {config[uniprot_ref_dir]}
         wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.fasta.gz
         wget -N ftp://ftp.uniprot.org/pub/databases/uniprot/uniref/uniref100/uniref100.release_note
         wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz

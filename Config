@@ -50,9 +50,11 @@ kraken_ref_dir: /home/christian/lab/tool_databases/test
 
 
 
+
 ##### Tool Paths #####
 picard_jar: /opt/picard/picard.jar
 maxbin_dir: /opt/MaxBin-2.2.5/
+braken_dir: /opt/Braken/
 
 ##### BBDUK Adapter and syntheic removal #####
 duk_ref: nextera  #Comma-delimited list of reference files. In addition to filenames, you may also use the keywords: adapters, artifacts, phix, lambda, pjet, mtst, kapa
@@ -82,4 +84,6 @@ kraken_bld_kmer_len: 35
 kraken_bld_minimizer_len: 31
 kraken_bld_minimizer_spaces: 6
 kraken_confidence : 0.0
-
+braken_readlen: 90
+braken_level: S
+braken_cutoff: 10

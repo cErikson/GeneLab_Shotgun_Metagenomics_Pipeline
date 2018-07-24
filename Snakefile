@@ -412,6 +412,40 @@ rule kraken2_se:
         --paired --use-names --gzip-compressed {input.read}
         '''
 
+rule braken_build:
+    input:
+    output:
+        dist='{config[kraken_db]}/database_kmer_distr_{config[braken_readlen]}mers.txt'
+    threads: config['kraken_threads']
+    shell:
+        '''
+        kraken2 --db {config[kraken_ref_dir]} --threads={threads}  --out {config[kraken_ref_dir]}/database_align.kraken $( find -L {config[kraken_ref_dir]}/library -name "*.fna" -o -name "*.fa" -o -name "*.fasta" | xargs cat ) 
+        perl {config[braken_dir]}/src/count-kmer-abubndances.pl --db={config[kraken_ref_dir]} --threads={threads} --read-length={config[braken_readlen]} {config[kraken_ref_dir]}/database.kraken > {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts
+        python {config[braken_dir]}/src/generate_kmer_distribution.py -i {config[kraken_ref_dir]}/database{config[braken_readlen]}mers.kraken_cnts -o {config[kraken_ref_dir]}/database_kmer_distr_{config[braken_readlen]}mers.txt
+        '''
+
+rule braken:
+    input:
+        report='data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
+        dist='{config[kraken_db]}/database_kmer_distr_{config[braken_readlen]}mers.txt'
+    output:
+        abund='data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'
+    shell:
+        '''
+        python {config[braken_dir]}/estimate_abundance.py -i {input.report} -k {input.dist} -l {config[braken_level]} -t {config[braken_cutoff]} -o {output.abund}
+        '''
+        
+rule combine_braken:
+    input:
+        abund=expand('data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt', id=file_ids.id)
+    output:
+        combine='data/{DS_NUM}_metagenomics_braken-abundances.txt'
+    shell:
+        '''
+        python {config[braken_dir]}/analysis_scripts/combine_bracken_outputs.py --files {input.abund} --names $(basename {input.abund} -a -s _braken_abund.txt | tr '\n' ' ') -o {output.combine}
+        '''
+
+
 rule grab_uniprot:
     output:
         ref=ancient(config['uniprot_ref_dir']+'uniref100.fasta.gz'),
@@ -462,8 +496,7 @@ rule single:
     input:
         'data/draft_genome/{id}/annotation.done',
         expand('report/fastqc/decontaminate/clean/{{id}}_R{READ}-clean_fastqc.html', READ=file_ids.read),
-        #'data/metagenome_taxa_assignment/{id}/{id}_kraken_report.txt',
-        
+        'data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'
     output:
         touch('single_{id}.done')
 
@@ -471,4 +504,5 @@ rule all:
     input:
         qc='report/multiqc_report.html',
         assembly='assembly.done',
+        abundance='data/{DS_NUM}_metagenomics_braken-abundances.txt'
         

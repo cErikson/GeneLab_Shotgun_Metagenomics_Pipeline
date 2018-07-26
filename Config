@@ -39,17 +39,16 @@ remap_threads: 8
 picard_threads: 8
 maxbin_threads: 8
 kraken_threads: 8
+dmnd_threads: 8
 
 ##### databases #####
-contam_fa: /syn-bio/var/GLDS/GLDS-69/hg19_main_mask_ribo_animal_allplant_allfungus.fa #Index filename prefix (minus trailing .X.bt2). Coma seperated 
-contam_index: /syn-bio/var/christian/tool_indexes/bowtie2/hg19_main_mask_ribo_animal_allplant_allfungus/
+contam_fa: /home/christian/lab/ref_datasets/ensembl/hg19/hg19_main_mask_ribo_animal_allplant_allfungus.fa.gz #Index filename prefix (minus trailing .X.bt2). Coma seperated 
+contam_index: //home/christian/lab/tool_databases/bowtie2/hg19_main_mask_ribo_animal_allplant_allfungus/
 contam_name: human_masked
-diamond_ref_dir: /home/christian/lab/tool_databases/diamond/
+diamond_ref_db: /home/christian/lab/tool_databases/diamond/
+uniprot_ftp: ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz #ftp://ftp.uniprot.org/pub/databases/uniprot/current_release/uniref/uniref100/uniref100.fasta.gz
 uniprot_ref_dir: /home/christian/lab/ref_datasets/uniprot/
 kraken_ref_dir: /home/christian/lab/tool_databases/test
-
-
-
 
 ##### Tool Paths #####
 picard_jar: /opt/picard/picard.jar
@@ -57,7 +56,7 @@ maxbin_dir: /opt/MaxBin-2.2.5/
 braken_dir: /opt/Braken/
 
 ##### BBDUK Adapter and syntheic removal #####
-duk_ref: nextera  #Comma-delimited list of reference files. In addition to filenames, you may also use the keywords: adapters, artifacts, phix, lambda, pjet, mtst, kapa
+duk_ref: /opt/bbmap/resources/nextera.fa.gz   #Comma-delimited list of reference files. In addition to filenames, you may also use the keywords: adapters, artifacts, phix, lambda, pjet, mtst, kapa
 duk_k: 21         # Kmer length used for finding contaminants.  Contaminants shorter than k will not be found.  k must be at least 1.
 duk_mink: 12      # Look for shorter kmers at read tips down to this length, when k-trimming or masking.  0 means disabled.  Enabling this will disable maskmiddle.
 duk_hdist: 1      # Maximum Hamming distance for ref kmers (subs only). Memory use is proportional to (3*K)^hdist.
@@ -66,6 +65,8 @@ duk_trimq: 20     #Regions with average quality BELOW this will be trimmed, if q
 duk_qtrim: w     #Trim read ends to remove bases with quality below trimq.Performed AFTER looking for kmers.  Values:  rl (trim both ends), f (neither end), r (right end only), l (left end only), w (sliding window).
 duk_minavgquality: 0     #(maq) Reads with average quality (after trimming) below this will be discarded.
 duk_maxns: -1      #If non-negative, reads with more Ns than this (after trimming) will be discarded.
+duk_trimleft: 0
+duk_trimright: 99
 duk_tbo: t
 duk_qin: 33
 duk_ziplevel: 5
@@ -84,6 +85,10 @@ kraken_bld_kmer_len: 35
 kraken_bld_minimizer_len: 31
 kraken_bld_minimizer_spaces: 6
 kraken_confidence : 0.0
+kraken_id_confidence : 0.0
 braken_readlen: 90
 braken_level: S
 braken_cutoff: 10
+
+##### Gengnome ID #####
+id_cutoff: 0.0

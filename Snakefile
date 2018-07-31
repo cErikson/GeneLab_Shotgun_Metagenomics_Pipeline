@@ -73,8 +73,8 @@ ruleorder: bbduk_pe > bbduk_se
                
 rule bbduk_pe:
     input: 
-        read1='data/sequencing/{id}_R1.fastq.gz',
-        read2='data/sequencing/{id}_R2.fastq.gz'
+        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
+        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
     output:
         read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
         read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
@@ -97,7 +97,7 @@ rule bbduk_pe:
         
 rule bbduk_se:
     input: 
-        read1='data/sequncing/{id}_R1.fastq.gz'
+        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz'
     output:
         read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
         read1_fail='data/trim/fail/{id}_R1-failed.fastq.gz'
@@ -131,9 +131,9 @@ ruleorder: contam_bowtie_pe > contam_bowtie_se
   
 rule contam_bowtie_pe:
     input: 
-        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
-        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
-	index=directory(config['contam_index'])
+        read1='data/sequencing/{id}_R1.fastq.gz',
+        read2='data/sequencing/{id}_R2.fastq.gz',
+        index=directory(config['contam_index'])
     output:
         sam='data/decontaminate/sam/{id}.sam',
         read1_clean='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
@@ -152,7 +152,7 @@ rule contam_bowtie_pe:
 
 rule contam_bowtie_se:
     input: 
-        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+        read1='data/sequencing/{id}_R1.fastq.gz',
         index=directory(config['contam_index'])
     output:
         sam='data/decontaminate/sam/{id}.sam',
@@ -172,8 +172,8 @@ ruleorder: megahit_pe > megahit_se
 
 rule megahit_pe:
     input: 
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
-        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz'
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz'
     output: 
         contig='data/assembly/{id}/{id}.contigs.fa'
     log:
@@ -188,7 +188,7 @@ rule megahit_pe:
       
 rule megahit_se:
     input: 
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz'
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz'
     output: 
         contig='data/assembly/{id}/{id}.contigs.fa'
     log:
@@ -209,6 +209,7 @@ rule prodigal_metagenome:
         genes='data/meta_gene_calls/{id}/{id}_genes.fasta',
         gff='data/meta_gene_calls/{id}/{id}_metagenome.gff',
         start='data/meta_gene_calls/{id}/{id}_prodigal.start'
+    benchmark: 'logs/prodigal/{id}/benchmark.tsv'
     shell:
         '''
         prodigal -i {input.contigs} -a {output.protiens} -d {output.genes} -f gff -o {output.gff} -p meta                    
@@ -233,8 +234,8 @@ ruleorder: remap_bowtie_pe > remap_bowtie_se
     
 rule remap_bowtie_pe:
     input: 
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
-        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
         index='data/remap/{id}/index/'
     output:
         sam=temporary('data/remap/{id}/{id}.sam')
@@ -250,7 +251,7 @@ rule remap_bowtie_pe:
 
 rule remap_bowtie_se:
     input: 
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
         index='data/remap/{id}/index/'
     output:
         sam=temporary('data/remap/{id}/{id}.sam')
@@ -397,7 +398,9 @@ rule prodigal_draft_genome:
 
         
 rule do_annotation:
-    input: dynamic('data/draft_genome/{id}/{bin}/{id}_{bin}_genome.gff')
+    input: 
+        dynamic('data/draft_genome/{id}/{bin}/{id}_{bin}_genome.gff'),
+        'data/binning/{id}/taxa_id/{id}_genome-calls.tsv'
     output: touch('data/draft_genome/{id}/annotation.done')
 
 rule kraken2_build:
@@ -415,8 +418,8 @@ ruleorder: kraken2_pe > kraken2_se
 
 rule kraken2_pe:
     input:
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
-        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
         index=config['kraken_ref_dir']+'/hash.k2d'
     output:
         unclass1='data/metagenome_taxa_assignment/{id}/{id}_unclassified_1.fq',
@@ -441,7 +444,7 @@ rule kraken2_pe:
         
 rule kraken2_se:
     input:
-        read='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
+        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
         index=config['kraken_ref_dir']+'/hash.k2d'
     output:
         unclass='data/metagenome_taxa_assignment/{id}/{id}_unclassified.fasta.gz',
@@ -496,77 +499,141 @@ rule combine_braken:
         python {config[braken_dir]}/analysis_scripts/combine_bracken_outputs.py --files {input.abund} --names $(basename {input.abund} -a -s _braken_abund.txt | tr '\n' ' ') -o {output.combine}
         '''
 
-
-rule grab_uniprot:
+rule convert2fa:
+    input:
+        'data/trim/clean/{id}_{read}-trimmed.fastq.gz'
     output:
-        ref=ancient(config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]),
-        go=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gaf'),
-        meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
-    threads:8
+        temporary('data/tmp/{id}_{read}-trimmed.fasta')
     shell:
         '''
-        cd {config[uniprot_ref_dir]}
-        wget -N {config[uniprot_ftp]}
-        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
-        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gpi.gz
+        if [[ $(zcat {input} | head -n 5 | sed -n '5p') == @* ]]
+        then zcat {input} | sed -n '1~4s/^@/>/p;2~4p' > {output}
+        else echo 'The FASTQ does not meet the assumption that a record is 4 lines' 
+        fi
         '''
 
-rule diamond_build: 
+rule fraggenescan:
     input:
-        uniref=config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]
+        'data/tmp/{id}_{read}-trimmed.fasta'
     output:
-        config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'         
-    params:
-        name=config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]
+        'data/metagenome_function_assignment/frag/{id}/{id}_{read}.faa'
+    log:
+        stdout='logs/frag/{id}/{id}_{read}.stdout',
+        stderr='logs/frag/{id}/{id}_{read}.stderr'
+    benchmark: 'logs/frag/{id}/{id}_{read}_benchmark.tsv'
+    threads: config['frag_threads']
     shell:
         '''
-        cd {config[diamond_ref_db]}
-        mkdir -p {params.name}
-        cd {params.name}
-        diamond makedb --in {input.uniref} --db {params.name} -v --log 
+        {config[fraggenescan_dir]}/run_FragGeneScan.pl -genome=$(pwd)/{input} -out=$(dirname {output})/{wildcards.id}_{wildcards.read} -complete=0 -train={config[frag_train]} -thread=8 > {log.stdout} 2> {log.stderr}
         '''
-
-rule diamond_pe:
+        
+rule interprotscan:
     input:
-        read1='data/decontaminate/clean/{id}_R1-clean.fastq.gz',
-        read2='data/decontaminate/clean/{id}_R2-clean.fastq.gz',
-        index=config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'
+        'data/metagenome_function_assignment/frag/{id}/{id}_{read}.faa'
     output:
-        sam='data/metagenome_function_assignment/diamond/{id}_diamond.sam.gz'
-    threads: config ['dmnd_threads']
+        'data/metagenome_function_assignment/inter/{id}/{id}_{read}.tsv'
+    log:
+        stdout='logs/inter/{id}/{id}_{read}.stdout',
+        stderr='logs/inter/{id}/{id}_{read}.stderr'
+    benchmark: 'logs/inter/{id}/{id}_{read}_benchmark.tsv'
+    threads: config['inter_threads']
     shell:
         '''
-        diamond blastx --db {input.index} --outfmt 101 --query {input.read1} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c > {output.sam}
-        diamond blastx --db {input.index} --outfmt 101 --query {input.read2} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c >> {output.sam}
+        interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp
         '''
 
-rule count_go:
-    input:
-        dmnd='data/metagenome_function_assignment/diamond/{id}_diamond.sam.gz',
-        gaf=config['uniprot_ref_dir']+'goa_uniprot_all.gaf'
-    output:
-        gohits=temporary('data/metagenome_function_assignment/diamond/{id}_gohits'),
-        goanno='data/metagenome_function_assignment/diamond/{id}_go-annotations.tsv'        
-    shell:
-        '''
-        join -t $'\t' -e 'NA' -1 2 -2 2 <(zcat {input.gaf} | sed '/^!/ d' | awk '{{if ($1 == "UniProtKB") {{print $0}}}}') <(zcat {input.dmnd} | awk '{{if ($3 != "*") {{print $0}}}}' | cut -f 3 | cut -d \| -f 2 | sort | uniq -c | sort -k 2 | awk '{{$1=$1;printf("%s\t%s\n", $1, $2)}}') > {output.goanno}
-        awk '{{printf ("%s\t%s\n", $NF, $4)}}' | sort -k 1g | awk '{{i[$2]+=$1}} END{{for(x in i){{printf ("%s\t%s\n" , i[x], x)}}}}' | sort -k 2 < {output.goanno} > {output.gohits}
+#rule grab_uniprot:
+#    output:
+#        ref=ancient(config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]),
+#        go=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gaf'),
+#        meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
+#    threads:8
+#    shell:
+#        '''
+#        cd {config[uniprot_ref_dir]}
+#        wget -N {config[uniprot_ftp]}
+#        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
+#        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gpi.gz
+#        '''
 
-        '''        
+#rule diamond_build: 
+#    input:
+#        uniref=config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]
+#    output:
+#        config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'         
+#    params:
+#        name=config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]
+#    shell:
+#        '''
+#        cd {config[diamond_ref_db]}
+#        mkdir -p {params.name}
+#        cd {params.name}
+#       diamond makedb --in {input.uniref} --db {params.name} -v --log 
+#        '''
 
-rule agrregate_go:
-    input:
-        go_hits=expand('data/metagenome_function_assignment/diamond/{id}_gohits', id=file_ids.id)
-    output:
-        raw='data/metagenome_function_assignment/agrregated-go-hits_raw.tsv',
-        scale='data/metagenome_function_assignment/agrregated-go-hits_scale.tsv'
-    script:
-        'snake/scripts/agrregate_go.R'
+#rule diamond_pe:
+#    input:
+#        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
+#        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
+#        index=config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'
+#    output:
+#        sam='data/metagenome_function_assignment/diamond/{id}_diamond.sam.gz'
+#    threads: config ['dmnd_threads']
+#    shell:
+#        '''
+#        diamond blastx --db {input.index} --outfmt 101 --query {input.read1} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c > {output.sam}
+#        diamond blastx --db {input.index} --outfmt 101 --query {input.read2} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c >> {output.sam}
+#        '''
+
+#rule get_prot_len:
+#    input:
+#        prot= config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]
+#    output:
+#        lens= config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.len'
+#    shell:
+#        '''
+#        cat {input.prot} | awk 'BEGIN{SEQ=0}; /^>/{head=$0}; /^[ATCGN]/{print(head "\t" length($0))};' | sort -k 2g > {output.len}
+#        '''
+        
+#rule get_library_len:
+#    input: 
+#        expand('data/decontaminate/clean/{id}_R1-clean.fastq.gz', id=file_ids.id)
+#    output:
+#        len=temporary('data/metagenome_function_assignment/diamond/lib-len')
+#    shell:
+#        '''
+#        wc -l {input.read1} > {output.len}
+#        '''
+        
+#rule count_go:
+#    input:
+#        dmnd='data/metagenome_function_assignment/diamond/{id}_diamond.sam.gz',
+#        gaf=config['uniprot_ref_dir']+'goa_uniprot_all.gaf'
+#    output:
+#        gohits=temporary('data/metagenome_function_assignment/diamond/{id}_gohits'),
+#        goanno='data/metagenome_function_assignment/diamond/{id}_go-annotations.tsv'        
+#    shell:
+#        '''
+#        join -t $'\t' -e 'NA' -1 2 -2 2 <(zcat {input.gaf} | sed '/^!/ d' | awk '{{if ($1 == "UniProtKB") {{print $0}}}}') <(zcat {input.dmnd} | awk '{{if ($3 != "*") {{print $0}}}}' | cut -f 3 | cut -d \| -f 2 | sort | uniq -c | sort -k 2 | awk '{{$1=$1;printf("%s\t%s\n", $1, $2)}}') > {output.goanno}
+#        awk '{{printf ("%s\t%s\n", $NF, $4)}}' | sort -k 1g | awk '{{i[$2]+=$1}} END{{for(x in i){{printf ("%s\t%s\n" , i[x], x)}}}}' | sort -k 2 < {output.goanno} > {output.gohits}
+#        '''        
+
+#rule agrregate_go:
+#    input:
+#        prot_len= config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.len',
+#        lib_len='data/metagenome_function_assignment/diamond/{id}_lib-len',
+#        go_hits=expand('data/metagenome_function_assignment/diamond/{id}_gohits', id=file_ids.id)
+#    output:
+#        raw='data/metagenome_function_assignment/agrregated-go-hits_raw.tsv',
+#        scale='data/metagenome_function_assignment/agrregated-go-hits_scale.tsv'
+#    script:
+#        'snake/scripts/agrregate_go.R'
     
 rule taxa_assignment:
     input:
         expand('data/metagenome_taxa_assignment/{id}/{id}_classified.fasta', id=file_ids.id)
-    
+
+
 rule assembly:
     input: expand('data/draft_genome/{id}/annotation.done', id=file_ids.id)
     output: touch("assembly.done")
@@ -575,14 +642,15 @@ rule single:
     input:
         'data/draft_genome/{id}/annotation.done',
         expand('report/fastqc/decontaminate/clean/{{id}}_R{READ}-clean_fastqc.html', READ=file_ids.read),
-        'data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'
+        'data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt',
     output:
         touch('single_{id}.done')
 
 rule all:
     input:
+        expand('data/metagenome_function_assignment/inter/{id}/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
         qc='report/multiqc_report.html',
         assembly='assembly.done',
-        abundance='data/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)       
+        abundance='data/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)
 
     

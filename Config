@@ -40,6 +40,8 @@ picard_threads: 8
 maxbin_threads: 8
 kraken_threads: 8
 dmnd_threads: 8
+frag_threads: 8
+inter_threads: 8
 
 ##### databases #####
 contam_fa: /home/christian/lab/ref_datasets/ensembl/hg19/hg19_main_mask_ribo_animal_allplant_allfungus.fa.gz #Index filename prefix (minus trailing .X.bt2). Coma seperated 
@@ -54,6 +56,7 @@ kraken_ref_dir: /home/christian/lab/tool_databases/test
 picard_jar: /opt/picard/picard.jar
 maxbin_dir: /opt/MaxBin-2.2.5/
 braken_dir: /opt/Braken/
+fraggenescan_dir: /opt/FragGeneScan/
 
 ##### BBDUK Adapter and syntheic removal #####
 duk_ref: /opt/bbmap/resources/nextera.fa.gz   #Comma-delimited list of reference files. In addition to filenames, you may also use the keywords: adapters, artifacts, phix, lambda, pjet, mtst, kapa
@@ -92,3 +95,7 @@ braken_cutoff: 10
 
 ##### Gengnome ID #####
 id_cutoff: 0.0
+
+frag_train: illumina_10
+
+inter_appl: Pfam,ProDom 

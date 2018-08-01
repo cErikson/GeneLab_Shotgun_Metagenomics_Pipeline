@@ -62,6 +62,7 @@ rule fastqc:
 rule multiqc:
     input:
         decan=expand('report/fastqc/decontaminate/clean/{IDS}_R{READ}-clean_fastqc.html', IDS=file_ids.id, READ=file_ids.read),
+        trim=expand('report/fastqc/trim/clean/{IDS}_R{READ}-trimmed_fastqc.html', IDS=file_ids.id, READ=file_ids.read),
     output:
         'report/multiqc_report.html'
     shell:
@@ -503,7 +504,7 @@ rule convert2fa:
     input:
         'data/trim/clean/{id}_{read}-trimmed.fastq.gz'
     output:
-        temporary('data/tmp/{id}_{read}-trimmed.fasta')
+        temporary('data/metagenome_function_assignment/tmp/{id}/{id}_{read}-trimmed.fasta')
     shell:
         '''
         if [[ $(zcat {input} | head -n 5 | sed -n '5p') == @* ]]
@@ -514,9 +515,9 @@ rule convert2fa:
 
 rule fraggenescan:
     input:
-        'data/tmp/{id}_{read}-trimmed.fasta'
+        'data/metagenome_function_assignment/tmp/{id}/{id}_{read}-trimmed.fasta'
     output:
-        'data/metagenome_function_assignment/frag/{id}/{id}_{read}.faa'
+        'data/metagenome_function_assignment/frag/{id}_{read}.faa'
     log:
         stdout='logs/frag/{id}/{id}_{read}.stdout',
         stderr='logs/frag/{id}/{id}_{read}.stderr'
@@ -526,23 +527,46 @@ rule fraggenescan:
         '''
         {config[fraggenescan_dir]}/run_FragGeneScan.pl -genome=$(pwd)/{input} -out=$(dirname {output})/{wildcards.id}_{wildcards.read} -complete=0 -train={config[frag_train]} -thread=8 > {log.stdout} 2> {log.stderr}
         sed -i '/\*/d' {output}
-	'''
+        '''
+        
+rule chuckify:
+    input:
+        'data/metagenome_function_assignment/frag/{id}_{read}.faa'
+    output:
+        temporary(dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'))
+    params:
+        
+    shell:
+        '''
+        rm -f data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.*.faa
+        awk 'BEGIN {{n_seq=0;}} /^>/ {{if(n_seq%100000==0){{file=sprintf("data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.%d.faa",n_seq);}} print >> file; n_seq++; next;}} {{ print >> file; }}' < {input}
+        '''
         
 rule interprotscan:
     input:
-        'data/metagenome_function_assignment/frag/{id}/{id}_{read}.faa'
+        'data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'
     output:
-        'data/metagenome_function_assignment/inter/{id}/{id}_{read}.tsv'
+        temporary('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
     log:
-        stdout='logs/inter/{id}/{id}_{read}.stdout',
-        stderr='logs/inter/{id}/{id}_{read}.stderr'
-    benchmark: 'logs/inter/{id}/{id}_{read}_benchmark.tsv'
+        stdout='logs/inter/{id}/{id}_{read}.{chunk}.stdout',
+        stderr='logs/inter/{id}/{id}_{read}.{chunk}.stderr'
+    benchmark: 'logs/inter/{id}/{id}_{read}.{chunk}.benchmark.tsv'
     threads: config['inter_threads']
     priority: -10
     shell:
         '''
-        interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp
-       '''
+        interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp -dra
+        '''
+
+rule cat_interproscan:
+    input:
+        dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
+    output:
+        'data/metagenome_function_assignment/inter/{id}_{read}.tsv'
+    shell:
+        '''
+        cat {input} > {output}
+        '''
 
 #rule grab_uniprot:
 #    output:
@@ -645,6 +669,7 @@ rule single:
         'data/draft_genome/{id}/annotation.done',
         expand('report/fastqc/decontaminate/clean/{{id}}_R{READ}-clean_fastqc.html', READ=file_ids.read),
         'data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt',
+        expand('data/metagenome_function_assignment/inter/{{id}}/{{id}}_R{read}.tsv', read=file_ids.read),
     output:
         touch('single_{id}.done')
 

@@ -98,4 +98,4 @@ id_cutoff: 0.0
 
 frag_train: illumina_10
 
-inter_appl: Pfam,ProDom 
+inter_appl: Pfam

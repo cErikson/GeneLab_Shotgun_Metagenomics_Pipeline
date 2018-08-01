@@ -525,7 +525,8 @@ rule fraggenescan:
     shell:
         '''
         {config[fraggenescan_dir]}/run_FragGeneScan.pl -genome=$(pwd)/{input} -out=$(dirname {output})/{wildcards.id}_{wildcards.read} -complete=0 -train={config[frag_train]} -thread=8 > {log.stdout} 2> {log.stderr}
-        '''
+        sed -i '/\*/d' {output}
+	'''
         
 rule interprotscan:
     input:
@@ -537,10 +538,11 @@ rule interprotscan:
         stderr='logs/inter/{id}/{id}_{read}.stderr'
     benchmark: 'logs/inter/{id}/{id}_{read}_benchmark.tsv'
     threads: config['inter_threads']
+    priority: -10
     shell:
         '''
         interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp
-        '''
+       '''
 
 #rule grab_uniprot:
 #    output:

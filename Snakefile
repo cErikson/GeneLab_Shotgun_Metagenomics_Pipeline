@@ -526,7 +526,7 @@ rule fraggenescan:
     shell:
         '''
         {config[fraggenescan_dir]}/run_FragGeneScan.pl -genome=$(pwd)/{input} -out=$(dirname {output})/{wildcards.id}_{wildcards.read} -complete=0 -train={config[frag_train]} -thread=8 > {log.stdout} 2> {log.stderr}
-        sed -i '/\*/d' {output}
+        sed -i 's/\*/X/g' {output}
         '''
         
 rule chuckify:
@@ -539,32 +539,43 @@ rule chuckify:
     shell:
         '''
         rm -f data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.*.faa
-        awk 'BEGIN {{n_seq=0;}} /^>/ {{if(n_seq%100000==0){{file=sprintf("data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.%d.faa",n_seq);}} print >> file; n_seq++; next;}} {{ print >> file; }}' < {input}
+        awk 'BEGIN {{n_seq=0;}} /^>/ {{if(n_seq%{config[chunk_size]}==0){{file=sprintf("data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.%d.faa",n_seq);}} print >> file; n_seq++; next;}} {{ print >> file; }}' < {input}
         '''
-        
-rule interprotscan:
+rule hmmer:
     input:
         'data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'
     output:
         temporary('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
-    log:
-        stdout='logs/inter/{id}/{id}_{read}.{chunk}.stdout',
-        stderr='logs/inter/{id}/{id}_{read}.{chunk}.stderr'
-    benchmark: 'logs/inter/{id}/{id}_{read}.{chunk}.benchmark.tsv'
-    threads: config['inter_threads']
+    threads: config['hmmer_threads']
     shell:
         '''
-        interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp -dra
+        hmmsearch --noali --tblout {output} -E {config[hmmer_ecut]} --cpu {threads} {config[pfam_hmm]} {input} #| awk '/Query:/{{printf "\r%s   ", $2}}'
         '''
 
-rule cat_interproscan:
+#rule interprotscan:
+#    input:
+#        'data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'
+#    output:
+#        temporary('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
+#    log:
+#        stdout='logs/inter/{id}/{id}_{read}.{chunk}.stdout',
+#        stderr='logs/inter/{id}/{id}_{read}.{chunk}.stderr'
+#    benchmark: 'logs/inter/{id}/{id}_{read}.{chunk}.benchmark.tsv'
+#    threads: config['inter_threads']
+#    shell:
+#        '''
+#        interproscan.sh -appl {config[inter_appl]} -i {input} -f tsv -o {output} --pa --goterms -dp --cpu {threads} -dp -dra
+#        '''
+
+rule cat_frag:
     input:
         dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
     output:
         'data/metagenome_function_assignment/inter/{id}_{read}.tsv'
     shell:
         '''
-        cat {input} > {output}
+        echo '#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----\n# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target\n' > {output}
+        cat {input} | sed '/^#/d' >> {output}
         '''
 
 #rule grab_uniprot:

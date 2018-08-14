@@ -201,7 +201,30 @@ rule megahit_se:
         '''
         megahit -1 {input.read1} -o data/assembly/{wildcards.id} --out-prefix {wildcards.id} --continue -t {threads} 2> {log.stderr} > {log.stdout}
         '''
-
+        
+rule kraken2_contig:
+    input:
+        read1='data/assembly/{id}/{id}.contigs.fa',
+        index=config['kraken_ref_dir']+'/hash.k2d'
+    output:
+        unclass='data/assembly/{id}/kraken/{id}_unclassified.fasta.gz',
+        classed='data/assembly/{id}/kraken/{id}_classified.fasta.gz',
+        taxa='data/assembly/{id}/kraken/{id}_kraken_taxa.txt',
+        report='data/assembly/{id}/kraken/{id}_kraken_report.txt' 
+    log:
+        stderr='logs/kraken_contig/{id}/stderr.txt',
+        stdout='logs/kraken_contig/{id}/stdout.txt'
+    benchmark: 'logs/krakenz_contig/{id}/benchmark.tsv'
+    threads: config['kraken_threads']
+    shell:
+        '''
+        kraken2 --db $(dirname {input.index}) --threads {threads} \
+        --unclassified-out {output.unclass}
+        --classified-out {output.classed} \
+        --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
+        --use-names --gzip-compressed {input.read}
+        '''
+        
 rule prodigal_metagenome:
     input:
         contigs='data/assembly/{id}/{id}.contigs.fa'
@@ -571,10 +594,10 @@ rule cat_frag:
     input:
         dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
     output:
-        'data/metagenome_function_assignment/inter/{id}_{read}.tsv'
+        'data/metagenome_function_assignment/pfam/{id}_{read}.tsv'
     shell:
         '''
-        echo '#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----\n# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target\n' > {output}
+        echo -e '#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----\n# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target\n' > {output}
         cat {input} | sed '/^#/d' >> {output}
         '''
 
@@ -685,7 +708,7 @@ rule single:
 
 rule all:
     input:
-        expand('data/metagenome_function_assignment/inter/{id}/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
+        expand('data/metagenome_function_assignment/pfam/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
         qc='report/multiqc_report.html',
         assembly='assembly.done',
         abundance='data/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)

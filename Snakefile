@@ -204,11 +204,11 @@ rule megahit_se:
         
 rule kraken2_contig:
     input:
-        read1='data/assembly/{id}/{id}.contigs.fa',
+        read='data/assembly/{id}/{id}.contigs.fa',
         index=config['kraken_ref_dir']+'/hash.k2d'
     output:
-        unclass='data/assembly/{id}/kraken/{id}_unclassified.fasta.gz',
-        classed='data/assembly/{id}/kraken/{id}_classified.fasta.gz',
+        unclass='data/assembly/{id}/kraken/{id}_unclassified.fa',
+        classed='data/assembly/{id}/kraken/{id}_classified.fa',
         taxa='data/assembly/{id}/kraken/{id}_kraken_taxa.txt',
         report='data/assembly/{id}/kraken/{id}_kraken_report.txt' 
     log:
@@ -218,11 +218,11 @@ rule kraken2_contig:
     threads: config['kraken_threads']
     shell:
         '''
-        kraken2 --db $(dirname {input.index}) --threads {threads} \
-        --unclassified-out {output.unclass}
-        --classified-out {output.classed} \
-        --output {output.taxa} --report {output.report} --confidence {config[kraken_percision]}
-        --use-names --gzip-compressed {input.read}
+        kraken2 --db $(dirname {input.index}) --threads {threads}\
+        --unclassified-out $(dirname {output.unclass})/$(basename -s .fa {output.unclass})\
+        --classified-out $(dirname {output.classed})/$(basename -s .fa {output.classed}) \
+        --output {output.taxa} --report {output.report} --confidence {config[kraken_confidence]}\
+        --use-names {input.read}
         '''
         
 rule prodigal_metagenome:
@@ -515,13 +515,15 @@ rule braken:
         
 rule combine_braken:
     input:
-        abund=expand('data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt', id=file_ids.id)
+        abund={'data/metagenome_taxa_assignment/{id}/{id}_braken_abund.txt'.format(id=x) for x in file_ids.id}
     output:
-        combine='data/{DS_NUM}_metagenomics_braken-abundances.txt'
-    shell:
-        '''
-        python {config[braken_dir]}/analysis_scripts/combine_bracken_outputs.py --files {input.abund} --names $(basename {input.abund} -a -s _braken_abund.txt | tr '\n' ' ') -o {output.combine}
-        '''
+        combine='data/metagenome_taxa_assignment/{DS_NUM}_metagenomics_braken-abundances.txt'
+    run:
+        files=list(input.abund)
+        files.sort()
+        names=','.join([x.rsplit('/',1)[1][:-17] for x in files])
+        shell("python2 {config[braken_dir]}/analysis_scripts/combine_bracken_outputs.py --files {files} --names {names} -o {output.combine}")
+       
 
 rule convert2fa:
     input:
@@ -557,8 +559,8 @@ rule chuckify:
         'data/metagenome_function_assignment/frag/{id}_{read}.faa'
     output:
         temporary(dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'))
-    params:
-        
+    resources:
+        io_lock=1    
     shell:
         '''
         rm -f data/metagenome_function_assignment/tmp/{wildcards.id}/{wildcards.id}_{wildcards.read}.*.faa
@@ -568,11 +570,11 @@ rule hmmer:
     input:
         'data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.faa'
     output:
-        temporary('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
+        'data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv'
     threads: config['hmmer_threads']
     shell:
         '''
-        hmmsearch --noali --tblout {output} -E {config[hmmer_ecut]} --cpu {threads} {config[pfam_hmm]} {input} #| awk '/Query:/{{printf "\r%s   ", $2}}'
+        hmmsearch --noali --tblout {output} -E {config[hmmer_ecut]} --cpu {threads} {config[pfam_hmm]} {input} | awk '/Query:/{{printf "\r%s   ", $2}}'
         '''
 
 #rule interprotscan:
@@ -594,55 +596,55 @@ rule cat_frag:
     input:
         dynamic('data/metagenome_function_assignment/tmp/{id}/{id}_{read}.{chunk}.tsv')
     output:
-        'data/metagenome_function_assignment/pfam/{id}_{read}.tsv'
+        'data/metagenome_function_assignment/inter/{id}_{read}.tsv'
+    resources:
+        io_lock=1
     shell:
         '''
-        echo -e '#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----\n# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target\n' > {output}
+        echo -e '#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----\\n# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target\\n' > {output}
         cat {input} | sed '/^#/d' >> {output}
         '''
 
-#rule grab_uniprot:
-#    output:
-#        ref=ancient(config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]),
-#        go=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gaf'),
-#        meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
-#    threads:8
-#    shell:
-#        '''
-#        cd {config[uniprot_ref_dir]}
-#        wget -N {config[uniprot_ftp]}
-#        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
-#        wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gpi.gz
-#        '''
+rule grab_uniprot:
+    output:
+        ref=ancient(config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]),
+        #go=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gaf'),
+        #meta=ancient(config['uniprot_ref_dir']+'goa_uniprot_all.gpi.gz')
+    threads:8
+    shell:
+        '''
+        cd {config[uniprot_ref_dir]}
+        wget -N {config[uniprot_ftp]}
+        #wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gaf.gz
+        #wget -N ftp://ftp.ebi.ac.uk/pub/databases/GO/goa/UNIPROT/goa_uniprot_all.gpi.gz
+        '''
 
-#rule diamond_build: 
-#    input:
-#        uniref=config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]
-#    output:
-#        config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'         
-#    params:
-#        name=config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]
-#    shell:
-#        '''
-#        cd {config[diamond_ref_db]}
-#        mkdir -p {params.name}
-#        cd {params.name}
-#       diamond makedb --in {input.uniref} --db {params.name} -v --log 
-#        '''
+rule diamond_build: 
+    input:
+        uniref=config['uniprot_ref_dir']+config['uniprot_ftp'].rsplit('/',1)[1]
+    output:
+        config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'         
+    params:
+        name=config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]
+    shell:
+        '''
+        cd {config[diamond_ref_db]}
+        mkdir -p {params.name}
+        cd {params.name}
+        diamond makedb --in {input.uniref} --db {params.name} -v --log 
+        '''
 
-#rule diamond_pe:
-#    input:
-#        read1='data/trim/clean/{id}_R1-trimmed.fastq.gz',
-#        read2='data/trim/clean/{id}_R2-trimmed.fastq.gz',
-#        index=config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'
-#    output:
-#        sam='data/metagenome_function_assignment/diamond/{id}_diamond.sam.gz'
-#    threads: config ['dmnd_threads']
-#    shell:
-#        '''
-#        diamond blastx --db {input.index} --outfmt 101 --query {input.read1} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c > {output.sam}
-#        diamond blastx --db {input.index} --outfmt 101 --query {input.read2} --max-target-seqs 1 --strand both --sensitive --threads {threads} | gzip -c >> {output.sam}
-#        '''
+rule diamond_pe:
+    input:
+        read1='data/trim/clean/{id}-trimmed.fastq.gz',
+        index=config['diamond_ref_db']+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'/'+config['uniprot_ftp'].rsplit('/',1)[1].split('.')[0]+'.dmnd'
+    output:
+        sam1='data/metagenome_function_assignment/diamond/{id}_diamond.daa'
+    threads: config ['dmnd_threads']
+    shell:
+        '''
+        diamond blastx --db {input.index} --outfmt 100 --query {input.read1} --max-target-seqs 1 --strand both --threads {threads} -c {config[dmnd_index_chunk]} -b {config[dmnd_query_chunk]} --out {output.sam1} 
+        '''
 
 #rule get_prot_len:
 #    input:
@@ -708,9 +710,38 @@ rule single:
 
 rule all:
     input:
-        expand('data/metagenome_function_assignment/pfam/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
+        #expand('data/metagenome_function_assignment/inter/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
         qc='report/multiqc_report.html',
         assembly='assembly.done',
-        abundance='data/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)
+        abundance='data/metagenome_taxa_assignment/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM),
+        dmnd=expand('data/metagenome_function_assignment/diamond/{id}_R{read}_diamond.daa', id=file_ids.id, read=file_ids.read)
 
-    
+rule contig_class:
+    input:
+        expand('data/assembly/{id}/kraken/{id}_classified.fa', id=file_ids.id)    
+
+rule compress_and_clean:
+    input:
+        expand('data/metagenome_taxa_assignment/{id}/{id}_kraken_taxa.txt.gz', id=file_ids.id)
+
+#rule sam2bam_compress:
+#    input:
+#        sam='{id}.sam'
+#    output:
+#        bam='{id}.bam'
+#    resources:
+#        io_lock=1
+#    shell:
+#        '''
+#        samtools view -b -h -F 0x04 -@ 8 {input.sam} > {output.bam}
+#        '''
+
+rule gzip_compress:
+    input:
+        '{path}'
+    output:
+        '{path}.gz'
+    shell:
+        '''
+        gzip -N {input}
+        '''

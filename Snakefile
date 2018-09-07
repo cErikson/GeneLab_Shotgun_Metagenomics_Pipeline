@@ -5,7 +5,7 @@ Add prokka, mingap
 
 
 # Requirements
-Bash: Samtools, bbtools, bowtie2, fastqc, megahit, dimond, krakenhll, prodigal, picard, awk
+Bash: Samtools, bbtools, bowtie2, fastqc, megahit, diamond, krakenhll, prodigal, picard, awk
 Python >= 3.5: snakemake, psutil, multiqc, 
 
 '''
@@ -692,8 +692,9 @@ rule diamond_pe:
     
 rule taxa_assignment:
     input:
-        expand('data/metagenome_taxa_assignment/{id}/{id}_classified.fasta', id=file_ids.id)
-
+        'data/metagenome_taxa_assignment/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM)
+    output:
+        touch("abundance.done")
 
 rule assembly:
     input: expand('data/draft_genome/{id}/annotation.done', id=file_ids.id)
@@ -708,13 +709,19 @@ rule single:
     output:
         touch('single_{id}.done')
 
+rule function:
+    input:
+        expand('data/metagenome_function_assignment/diamond/{id}_R{read}_diamond.daa', id=file_ids.id, read=file_ids.read)
+    output:
+	touch("function.done")
+
 rule all:
     input:
         #expand('data/metagenome_function_assignment/inter/{id}_R{read}.tsv', id=file_ids.id, read=file_ids.read),
         qc='report/multiqc_report.html',
         assembly='assembly.done',
-        abundance='data/metagenome_taxa_assignment/{pre}_metagenomics_braken-abundances.txt'.format(pre=DS_NUM),
-        dmnd=expand('data/metagenome_function_assignment/diamond/{id}_R{read}_diamond.daa', id=file_ids.id, read=file_ids.read)
+        abundance='abundance.done',
+        func='function.done'
 
 rule contig_class:
     input:
